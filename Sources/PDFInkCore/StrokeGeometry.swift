@@ -106,12 +106,12 @@ public enum StrokeGeometry {
         return false
     }
 
-    static func squaredDistance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+    public static func squaredDistance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
         let dx = a.x - b.x, dy = a.y - b.y
         return dx * dx + dy * dy
     }
 
-    static func squaredDistanceToSegment(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+    public static func squaredDistanceToSegment(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
         let abx = b.x - a.x, aby = b.y - a.y
         let apx = p.x - a.x, apy = p.y - a.y
         let len2 = abx * abx + aby * aby

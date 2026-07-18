@@ -19,6 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.openPDF(at: URL(fileURLWithPath: path))
         }
 
+        // Dev/testing hook: synthesizes strokes and writes snapshot sequence.
+        if let flagIndex = CommandLine.arguments.firstIndex(of: "--draw-test"),
+           CommandLine.arguments.count > flagIndex + 1 {
+            DevHarness.run(controller: controller, prefix: CommandLine.arguments[flagIndex + 1])
+        }
+
         // Dev/testing hook: `PDFInk file.pdf --snapshot out.png` renders the
         // window into a PNG (no screen-recording permission needed) and quits.
         if let flagIndex = CommandLine.arguments.firstIndex(of: "--snapshot"),

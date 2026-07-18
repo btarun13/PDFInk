@@ -3,12 +3,20 @@ import PDFKit
 import PDFInkCore
 import UniformTypeIdentifiers
 
-final class MainWindowController: NSWindowController, NSWindowDelegate {
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation, NSToolbarDelegate {
 
     let pdfView = PDFView()
     let thumbnailView = PDFThumbnailView()
     private let dropContainer = DropContainerView()
     private let placeholderLabel = NSTextField(labelWithString: "Drop a PDF here or use File ▸ Open (⌘O)")
+
+    let store = StrokeStore()
+    let toolState = ToolState()
+    private(set) var canvas: DrawingCanvasView?
+
+    private var toolSegment: NSSegmentedControl?
+    private var widthSegment: NSSegmentedControl?
+    private var colorPopUp: NSPopUpButton?
 
     private(set) var fileURL: URL?
 
@@ -24,6 +32,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         setUpContentView()
+        setUpToolbar()
+
+        store.onChange = { [weak self] pageIndex in
+            guard let self else { return }
+            self.canvas?.storeDidChange(pageIndex: pageIndex)
+            self.window?.isDocumentEdited = true
+        }
+        toolState.onChange = { [weak self] in
+            self?.canvas?.toolStateDidChange()
+            self?.syncToolbarSelection()
+        }
     }
 
     @available(*, unavailable)
@@ -65,6 +84,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         dropContainer.addSubview(splitView)
         dropContainer.addSubview(placeholderLabel)
 
+        // Drawing overlay sits on top of the PDFView, same frame, and maps all
+        // input through PDFView's page geometry.
+        let canvasView = DrawingCanvasView(pdfView: pdfView, store: store, toolState: toolState)
+        pdfView.addSubview(canvasView)
+        canvas = canvasView
+
         NSLayoutConstraint.activate([
             dropContainer.topAnchor.constraint(equalTo: contentView.topAnchor),
             dropContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
@@ -77,6 +102,120 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             placeholderLabel.centerXAnchor.constraint(equalTo: dropContainer.centerXAnchor),
             placeholderLabel.centerYAnchor.constraint(equalTo: dropContainer.centerYAnchor),
         ])
+    }
+
+    // MARK: - Toolbar
+
+    private enum ToolbarID {
+        static let tools = NSToolbarItem.Identifier("pdfink.tools")
+        static let color = NSToolbarItem.Identifier("pdfink.color")
+        static let width = NSToolbarItem.Identifier("pdfink.width")
+    }
+
+    private func setUpToolbar() {
+        let toolbar = NSToolbar(identifier: "PDFInkToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window?.toolbar = toolbar
+    }
+
+    fileprivate func makeToolsItem() -> NSToolbarItem {
+        let segment = NSSegmentedControl(
+            labels: ["✏️ Pen", "🖍 Highlight", "◻️ Erase", "◌ Lasso"],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(toolSegmentChanged(_:)))
+        segment.selectedSegment = 0
+        toolSegment = segment
+        let item = NSToolbarItem(itemIdentifier: ToolbarID.tools)
+        item.label = "Tools"
+        item.view = segment
+        return item
+    }
+
+    fileprivate func makeColorItem() -> NSToolbarItem {
+        let popUp = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 60, height: 24), pullsDown: false)
+        for (index, preset) in ToolState.presetColors.enumerated() {
+            let menuItem = NSMenuItem(title: preset.name, action: nil, keyEquivalent: "")
+            menuItem.image = Self.swatchImage(for: preset.color)
+            menuItem.tag = index
+            popUp.menu?.addItem(menuItem)
+        }
+        popUp.menu?.addItem(.separator())
+        let custom = NSMenuItem(title: "Custom…", action: nil, keyEquivalent: "")
+        custom.tag = -1
+        popUp.menu?.addItem(custom)
+        popUp.target = self
+        popUp.action = #selector(colorChanged(_:))
+        colorPopUp = popUp
+        let item = NSToolbarItem(itemIdentifier: ToolbarID.color)
+        item.label = "Color"
+        item.view = popUp
+        return item
+    }
+
+    fileprivate func makeWidthItem() -> NSToolbarItem {
+        let segment = NSSegmentedControl(
+            labels: ToolState.widthPresets.map(\.name),
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(widthChanged(_:)))
+        segment.selectedSegment = 1
+        widthSegment = segment
+        let item = NSToolbarItem(itemIdentifier: ToolbarID.width)
+        item.label = "Width"
+        item.view = segment
+        return item
+    }
+
+    private static func swatchImage(for color: StrokeColor) -> NSImage {
+        NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+            let path = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+            NSColor(calibratedRed: color.red, green: color.green, blue: color.blue, alpha: 1).setFill()
+            path.fill()
+            NSColor.tertiaryLabelColor.setStroke()
+            path.stroke()
+            return true
+        }
+    }
+
+    private func syncToolbarSelection() {
+        let toolIndex: Int
+        switch toolState.tool {
+        case .pen: toolIndex = 0
+        case .highlighter: toolIndex = 1
+        case .eraser: toolIndex = 2
+        case .lasso: toolIndex = 3
+        }
+        toolSegment?.selectedSegment = toolIndex
+    }
+
+    @objc private func toolSegmentChanged(_ sender: NSSegmentedControl) {
+        let tools: [Tool] = [.pen, .highlighter, .eraser, .lasso]
+        guard (0..<tools.count).contains(sender.selectedSegment) else { return }
+        toolState.tool = tools[sender.selectedSegment]
+    }
+
+    @objc private func colorChanged(_ sender: NSPopUpButton) {
+        guard let selected = sender.selectedItem else { return }
+        if selected.tag == -1 {
+            let panel = NSColorPanel.shared
+            panel.setTarget(self)
+            panel.setAction(#selector(customColorPicked(_:)))
+            panel.orderFront(nil)
+        } else if (0..<ToolState.presetColors.count).contains(selected.tag) {
+            toolState.color = ToolState.presetColors[selected.tag].color
+        }
+    }
+
+    @objc private func customColorPicked(_ sender: NSColorPanel) {
+        toolState.setColor(from: sender.color)
+    }
+
+    @objc private func widthChanged(_ sender: NSSegmentedControl) {
+        guard (0..<ToolState.widthPresets.count).contains(sender.selectedSegment) else { return }
+        toolState.baseWidth = ToolState.widthPresets[sender.selectedSegment].width
     }
 
     // MARK: - Document handling
@@ -197,9 +336,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @objc func zoomOutAction(_ sender: Any?) { pdfView.zoomOut(sender) }
     @objc func actualSizeAction(_ sender: Any?) { pdfView.scaleFactor = 1.0 }
 
-    @objc func selectPenAction(_ sender: Any?) {}
-    @objc func selectHighlighterAction(_ sender: Any?) {}
-    @objc func selectEraserAction(_ sender: Any?) {}
+    @objc func selectPenAction(_ sender: Any?) { toolState.tool = .pen }
+    @objc func selectHighlighterAction(_ sender: Any?) { toolState.tool = .highlighter }
+    @objc func selectEraserAction(_ sender: Any?) { toolState.tool = .eraser }
+
+    @objc func undo(_ sender: Any?) { window?.undoManager?.undo() }
+    @objc func redo(_ sender: Any?) { window?.undoManager?.redo() }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(undo(_:)): return window?.undoManager?.canUndo ?? false
+        case #selector(redo(_:)): return window?.undoManager?.canRedo ?? false
+        default: return true
+        }
+    }
 
     override func responds(to aSelector: Selector!) -> Bool {
         // Disable document-dependent menu items until a PDF is open.
@@ -257,5 +407,26 @@ extension MainWindowController {
             NSLog("PDFInk: page %d rectInContent=%@", i, NSStringFromRect(r))
         }
         NSLog("PDFInk: contentView bounds=%@ flipped=%d", NSStringFromRect(contentView.bounds), contentView.isFlipped ? 1 : 0)
+    }
+}
+
+extension MainWindowController {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [ToolbarID.tools, .flexibleSpace, ToolbarID.color, ToolbarID.width]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(_ toolbar: NSToolbar,
+                 itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case ToolbarID.tools: return makeToolsItem()
+        case ToolbarID.color: return makeColorItem()
+        case ToolbarID.width: return makeWidthItem()
+        default: return nil
+        }
     }
 }
