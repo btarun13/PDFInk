@@ -214,6 +214,18 @@ final class DrawingCanvasView: NSView {
 
     // MARK: - Input
 
+    /// Event location in this view's coordinates. Handles windowless events
+    /// (e.g. NSEvent(cgEvent:) wrappers), whose locationInWindow is in screen
+    /// coordinates.
+    private func viewPoint(for event: NSEvent) -> CGPoint {
+        if event.window === window {
+            return convert(event.locationInWindow, from: nil)
+        }
+        guard let window else { return .zero }
+        let inWindow = window.convertPoint(fromScreen: event.locationInWindow)
+        return convert(inWindow, from: nil)
+    }
+
     private func pressure(for event: NSEvent) -> CGFloat {
         if event.subtype == .tabletPoint {
             return CGFloat(max(0, min(1, event.pressure)))
@@ -232,7 +244,7 @@ final class DrawingCanvasView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard pdfView?.document != nil else { return }
-        let viewPoint = convert(event.locationInWindow, from: nil)
+        let viewPoint = viewPoint(for: event)
         guard let (page, pageIndex) = page(at: viewPoint) else { return }
 
         let effectiveTool = stylusIsEraserEnd ? .eraser : toolState.tool
@@ -252,7 +264,7 @@ final class DrawingCanvasView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let viewPoint = convert(event.locationInWindow, from: nil)
+        let viewPoint = viewPoint(for: event)
         let effectiveTool = stylusIsEraserEnd ? .eraser : toolState.tool
 
         if effectiveTool == .eraser {

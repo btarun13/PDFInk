@@ -25,6 +25,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DevHarness.run(controller: controller, prefix: CommandLine.arguments[flagIndex + 1])
         }
 
+        // Dev/testing hook: simulated tablet events (subtype/pressure/tilt).
+        if let flagIndex = CommandLine.arguments.firstIndex(of: "--pressure-test"),
+           CommandLine.arguments.count > flagIndex + 1 {
+            DevHarness.runPressureTest(controller: controller, prefix: CommandLine.arguments[flagIndex + 1])
+        }
+
         // Dev/testing hook: `PDFInk file.pdf --snapshot out.png` renders the
         // window into a PNG (no screen-recording permission needed) and quits.
         if let flagIndex = CommandLine.arguments.firstIndex(of: "--snapshot"),

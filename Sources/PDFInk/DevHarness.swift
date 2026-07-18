@@ -65,6 +65,105 @@ enum DevHarness {
         controller.writeWindowSnapshot(to: URL(fileURLWithPath: "\(prefix)_\(name).png"))
     }
 
+    // MARK: - Tablet simulation (--pressure-test)
+
+    /// Simulates Wacom-style input without hardware by building CGEvents with
+    /// tablet subtype + pressure/tilt fields and delivering the wrapped
+    /// NSEvents to the canvas. Verifies the event.subtype == .tabletPoint code
+    /// path, pressure→width mapping, and tilt logging.
+    static func runPressureTest(controller: MainWindowController, prefix: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            controller.toolState.tool = .pen
+            controller.toolState.color = ToolState.presetColors[1].color // blue
+            // Pressure ramps 0→1 along the stroke: width should swell 0.5→4pt.
+            simulateTabletStroke(controller: controller,
+                                 fromWindow: CGPoint(x: 300, y: 620),
+                                 toWindow: CGPoint(x: 850, y: 620),
+                                 pressure: { t in t })
+            // Second stroke: pressure peaks mid-stroke (bulge shape).
+            simulateTabletStroke(controller: controller,
+                                 fromWindow: CGPoint(x: 300, y: 520),
+                                 toWindow: CGPoint(x: 850, y: 520),
+                                 pressure: { t in sin(t * .pi) })
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+            snapshot(controller, prefix, "pressure")
+            let strokes = controller.store.strokes(onPage: 0)
+            for (i, s) in strokes.enumerated() {
+                let pressures = s.samples.map(\.pressure)
+                NSLog("PDFInk[devtest]: stroke %d pressures min=%.2f max=%.2f count=%d",
+                      i, pressures.min() ?? -1, pressures.max() ?? -1, s.samples.count)
+            }
+        }
+        // Eraser-flip: post a synthesized proximity event (eraser end entering),
+        // check the tool auto-switches, then flip back to the pen tip.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            postProximityEvent(isEraser: true, entering: true)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.4) {
+            NSLog("PDFInk[devtest]: after eraser-end proximity, tool=%@", controller.toolState.tool.rawValue)
+            postProximityEvent(isEraser: false, entering: true)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.8) {
+            NSLog("PDFInk[devtest]: after pen-tip proximity, tool=%@", controller.toolState.tool.rawValue)
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// Builds a tabletProximity CGEvent and posts it through NSApp's event
+    /// queue so local NSEvent monitors observe it, as with real hardware.
+    private static func postProximityEvent(isEraser: Bool, entering: Bool) {
+        guard let cg = CGEvent(source: nil) else { return }
+        cg.type = .tabletProximity
+        // NX_TABLET_POINTER_* encoding: pen=1, cursor=2, eraser=3.
+        cg.setIntegerValueField(.tabletProximityEventPointerType, value: isEraser ? 3 : 1)
+        cg.setIntegerValueField(.tabletProximityEventEnterProximity, value: entering ? 1 : 0)
+        guard let ns = NSEvent(cgEvent: cg) else {
+            NSLog("PDFInk[devtest]: could not wrap proximity CGEvent")
+            return
+        }
+        NSLog("PDFInk[devtest]: posting proximity event type=%d entering=%d pointer=%@",
+              ns.type.rawValue, entering ? 1 : 0, isEraser ? "eraser" : "pen")
+        NSApp.postEvent(ns, atStart: false)
+    }
+
+    private static func simulateTabletStroke(controller: MainWindowController,
+                                             fromWindow p0: CGPoint,
+                                             toWindow p1: CGPoint,
+                                             pressure: (CGFloat) -> CGFloat,
+                                             steps: Int = 40) {
+        guard let canvas = controller.canvas,
+              let window = controller.window else { return }
+
+        func tabletEvent(_ type: CGEventType, _ windowPoint: CGPoint, _ pressureValue: CGFloat) -> NSEvent? {
+            // CGEvent locations are in global display coordinates (top-left origin).
+            let screenPoint = window.convertPoint(toScreen: windowPoint)
+            let screenHeight = NSScreen.screens.first?.frame.height ?? 0
+            let globalPoint = CGPoint(x: screenPoint.x, y: screenHeight - screenPoint.y)
+            guard let cg = CGEvent(mouseEventSource: nil, mouseType: type,
+                                   mouseCursorPosition: globalPoint, mouseButton: .left) else { return nil }
+            cg.setIntegerValueField(.mouseEventSubtype, value: 1) // NSEvent.EventSubtype.tabletPoint
+            cg.setDoubleValueField(.mouseEventPressure, value: Double(pressureValue))
+            cg.setDoubleValueField(.tabletEventPointPressure, value: Double(pressureValue))
+            cg.setDoubleValueField(.tabletEventTiltX, value: 0.25)
+            cg.setDoubleValueField(.tabletEventTiltY, value: -0.10)
+            guard let ns = NSEvent(cgEvent: cg) else { return nil }
+            NSLog("PDFInk[devtest]: synthesized subtype=%d pressure=%.2f",
+                  ns.subtype.rawValue, ns.pressure)
+            return ns
+        }
+
+        if let down = tabletEvent(.leftMouseDown, p0, pressure(0)) { canvas.mouseDown(with: down) }
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let point = CGPoint(x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t)
+            if let drag = tabletEvent(.leftMouseDragged, point, pressure(t)) {
+                canvas.mouseDragged(with: drag)
+            }
+        }
+        if let up = tabletEvent(.leftMouseUp, p1, pressure(1)) { canvas.mouseUp(with: up) }
+    }
+
     /// Window-space location of the first highlighter stroke's midpoint.
     private static func highlighterWindowPoint(_ controller: MainWindowController) -> CGPoint? {
         guard let canvas = controller.canvas,
