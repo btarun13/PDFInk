@@ -28,23 +28,21 @@ public enum AnnotationSerializer {
         }
         annotation.add(path)
 
+        // Alpha goes into the color itself: PDFKit writes it as /CA on save,
+        // and unlike a manually-set /CA key it also honors it when rendering.
+        let alpha: CGFloat = stroke.tool == .highlighter ? 0.4 : stroke.color.alpha
         annotation.color = NSColor(calibratedRed: stroke.color.red,
                                    green: stroke.color.green,
                                    blue: stroke.color.blue,
-                                   alpha: 1.0)
-        // Alpha is carried separately so PDF viewers blend the whole ink object once.
+                                   alpha: alpha)
         annotation.contents = nil
 
         let border = PDFBorder()
         border.lineWidth = averageWidth(of: stroke)
         annotation.border = border
 
-        switch stroke.tool {
-        case .highlighter:
-            annotation.setValue(NSNumber(value: 0.4), forAnnotationKey: PDFAnnotationKey(rawValue: "/CA"))
+        if stroke.tool == .highlighter {
             annotation.setValue("Multiply", forAnnotationKey: PDFAnnotationKey(rawValue: "/BM"))
-        default:
-            annotation.setValue(NSNumber(value: Double(stroke.color.alpha)), forAnnotationKey: PDFAnnotationKey(rawValue: "/CA"))
         }
 
         // Stash full-fidelity stroke JSON (pressure per sample) for round-tripping.

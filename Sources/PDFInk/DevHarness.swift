@@ -110,6 +110,51 @@ enum DevHarness {
         }
     }
 
+    // MARK: - Persistence (--persist-test / --draft-test)
+
+    /// Draws strokes, saves in place (ink annotations), exports flattened PDF.
+    static func runPersistTest(controller: MainWindowController, prefix: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            controller.toolState.tool = .pen
+            controller.toolState.color = ToolState.presetColors[2].color
+            simulateTabletStroke(controller: controller,
+                                 fromWindow: CGPoint(x: 320, y: 640),
+                                 toWindow: CGPoint(x: 800, y: 500),
+                                 pressure: { t in t })
+            controller.toolState.tool = .highlighter
+            controller.toolState.color = ToolState.presetColors[4].color
+            simulateStroke(controller: controller,
+                           fromWindow: CGPoint(x: 320, y: 560),
+                           toWindow: CGPoint(x: 800, y: 560),
+                           wiggle: 0)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+            controller.saveDocumentAction(nil)
+            do {
+                try controller.exportFlattened(to: URL(fileURLWithPath: "\(prefix)_flat.pdf"))
+                NSLog("PDFInk[devtest]: flattened export done")
+            } catch {
+                NSLog("PDFInk[devtest]: flattened export FAILED: %@", error.localizedDescription)
+            }
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// Draws strokes and terminates WITHOUT saving — the autosave draft must
+    /// restore them on next launch.
+    static func runDraftTest(controller: MainWindowController) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            controller.toolState.tool = .pen
+            controller.toolState.color = ToolState.presetColors[5].color // purple
+            simulateStroke(controller: controller,
+                           fromWindow: CGPoint(x: 400, y: 400),
+                           toWindow: CGPoint(x: 700, y: 250),
+                           wiggle: 40)
+            NSLog("PDFInk[devtest]: drew stroke, terminating without save")
+            NSApp.terminate(nil)
+        }
+    }
+
     /// Builds a tabletProximity CGEvent and posts it through NSApp's event
     /// queue so local NSEvent monitors observe it, as with real hardware.
     private static func postProximityEvent(isEraser: Bool, entering: Bool) {

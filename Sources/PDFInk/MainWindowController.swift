@@ -13,6 +13,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     let store = StrokeStore()
     let toolState = ToolState()
     private(set) var canvas: DrawingCanvasView?
+    private lazy var autosave = AutosaveManager(store: store)
+    /// Store generation at the last successful explicit save.
+    private var savedGeneration: UInt64 = 0
 
     private var toolSegment: NSSegmentedControl?
     private var widthSegment: NSSegmentedControl?
@@ -225,7 +228,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             presentError(message: "Couldn't open PDF", info: url.path)
             return
         }
+        autosave.saveNow() // preserve unsaved ink of the previous document
         fileURL = url
+
+        // Reload editable strokes: an autosaved draft wins (it's newest);
+        // otherwise recover strokes from PDFInk annotations saved in the file.
+        store.removeAll()
+        window?.undoManager?.removeAllActions()
+        if let draft = AutosaveManager.loadDraft(forDocument: url), !draft.isEmpty {
+            for stroke in draft.allStrokes { store.add(stroke) }
+            NSLog("PDFInk: restored %d strokes from autosave draft", draft.allStrokes.count)
+        } else {
+            let recovered = AnnotationSerializer.extractStrokes(from: document)
+            for stroke in recovered { store.add(stroke) }
+            if !recovered.isEmpty {
+                NSLog("PDFInk: recovered %d strokes from PDF annotations", recovered.count)
+            }
+        }
+        // PDFInk-tagged annotations are re-editable via the store, so hide them
+        // from the display copy — the canvas is the source of truth on screen.
+        for pageIndex in 0..<document.pageCount {
+            guard let page = document.page(at: pageIndex) else { continue }
+            for annotation in page.annotations where annotation.userName == AnnotationSerializer.annotationTitle {
+                page.removeAnnotation(annotation)
+            }
+        }
+
         pdfView.document = document
         pdfView.layoutDocumentView()
         if let firstPage = document.page(at: 0) {
@@ -233,10 +261,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             pdfView.go(to: PDFDestination(page: firstPage, at: top))
         }
         placeholderLabel.isHidden = true
+        savedGeneration = store.generation
+        window?.isDocumentEdited = false
+        autosave.begin(documentURL: url)
         window?.title = "PDFInk — \(url.lastPathComponent)"
         window?.representedURL = url
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
         NSLog("PDFInk: opened \(url.lastPathComponent) with \(document.pageCount) pages")
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        persistDraftIfNeeded()
+    }
+
+    /// Unsaved ink survives via the draft; explicit save clears it.
+    func persistDraftIfNeeded() {
+        if store.generation != savedGeneration {
+            autosave.saveNow()
+        }
     }
 
     /// Dev/testing: renders the window's content view into a PNG.
@@ -324,12 +366,48 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
     }
 
+    /// Cmd+S: writes strokes as ink annotations into the PDF in place.
+    /// The annotations are applied to a copy so the display document (and the
+    /// canvas as source of truth) stay annotation-free.
     @objc func saveDocumentAction(_ sender: Any?) {
-        NSSound.beep() // Wired up in the persistence milestone.
+        guard let document = pdfView.document, let url = fileURL else { return }
+        guard let data = document.dataRepresentation(),
+              let copy = PDFDocument(data: data) else {
+            presentError(message: "Couldn't prepare document for saving", info: url.lastPathComponent)
+            return
+        }
+        AnnotationSerializer.apply(store: store, to: copy)
+        if copy.write(to: url) {
+            savedGeneration = store.generation
+            window?.isDocumentEdited = false
+            autosave.clearDraft()
+            NSLog("PDFInk: saved %d strokes as ink annotations to %@",
+                  store.allStrokes.count, url.lastPathComponent)
+        } else {
+            presentError(message: "Couldn't save PDF", info: url.path)
+        }
     }
 
     @objc func exportFlattenedAction(_ sender: Any?) {
-        NSSound.beep() // Wired up in the persistence milestone.
+        guard let document = pdfView.document, let url = fileURL else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + " (flattened).pdf"
+        panel.beginSheetModal(for: window!) { [weak self] response in
+            guard let self, response == .OK, let outURL = panel.url else { return }
+            do {
+                try FlattenedExporter.export(document: document, store: self.store, to: outURL)
+                NSLog("PDFInk: exported flattened PDF to %@", outURL.path)
+            } catch {
+                self.presentError(message: "Export failed", info: error.localizedDescription)
+            }
+        }
+    }
+
+    /// Dev/testing: non-interactive flattened export.
+    func exportFlattened(to outURL: URL) throws {
+        guard let document = pdfView.document else { return }
+        try FlattenedExporter.export(document: document, store: store, to: outURL)
     }
 
     @objc func zoomInAction(_ sender: Any?) { pdfView.zoomIn(sender) }

@@ -31,6 +31,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DevHarness.runPressureTest(controller: controller, prefix: CommandLine.arguments[flagIndex + 1])
         }
 
+        // Dev/testing hook: draw, save in place, export flattened.
+        if let flagIndex = CommandLine.arguments.firstIndex(of: "--persist-test"),
+           CommandLine.arguments.count > flagIndex + 1 {
+            DevHarness.runPersistTest(controller: controller, prefix: CommandLine.arguments[flagIndex + 1])
+        }
+
+        // Dev/testing hook: draw, then quit without saving (draft autosave).
+        if CommandLine.arguments.contains("--draft-test") {
+            DevHarness.runDraftTest(controller: controller)
+        }
+
         // Dev/testing hook: `PDFInk file.pdf --snapshot out.png` renders the
         // window into a PNG (no screen-recording permission needed) and quits.
         if let flagIndex = CommandLine.arguments.firstIndex(of: "--snapshot"),
@@ -42,6 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        mainWindowController?.persistDraftIfNeeded()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
