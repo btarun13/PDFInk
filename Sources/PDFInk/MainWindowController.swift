@@ -345,29 +345,47 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
     }
 
+    /// Dev/demo: wipe in-memory ink, undo history, and any autosaved draft so
+    /// a scripted run starts from a clean slate and leaves none behind.
+    func discardDraftAndInk() {
+        store.removeAll()
+        window?.undoManager?.removeAllActions()
+        autosave.clearDraft()
+        savedGeneration = store.generation
+        window?.isDocumentEdited = false
+    }
+
     /// Dev/testing: renders the window's content view into a PNG.
     func writeWindowSnapshot(to url: URL) {
-        guard let contentView = window?.contentView else { return }
         NSLog("PDFInk: snapshot state: scale=%.2f currentPage=%@ visible=%d docView=%@",
               pdfView.scaleFactor,
               pdfView.currentPage.map { String(describing: pdfView.document?.index(for: $0)) } ?? "nil",
               pdfView.visiblePages.count,
               NSStringFromRect(pdfView.documentView?.frame ?? .zero))
+        guard let image = composeWindowImage(),
+              let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return }
+        try? data.write(to: url)
+        NSLog("PDFInk: snapshot written to %@", url.path)
+    }
 
+    /// Composes what the user sees into a CGImage (backing-scale pixels).
+    /// Used by snapshots and the demo recorder.
+    func composeWindowImage() -> CGImage? {
+        guard let contentView = window?.contentView else { return nil }
         // PDFView draws through Metal-backed layers that cacheDisplay can't
         // capture, so compose the snapshot manually: the view hierarchy first
         // (chrome, sidebar, drawing overlay), then the visible PDF pages drawn
         // through the same page→view transforms the app uses. Any coordinate
         // bug shows up as misregistration between pages and ink.
         let bounds = contentView.bounds
-        guard let rep = contentView.bitmapImageRepForCachingDisplay(in: bounds) else { return }
+        guard let rep = contentView.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
         contentView.cacheDisplay(in: bounds, to: rep)
 
         let scale = CGFloat(rep.pixelsWide) / bounds.width
         guard let ctx = CGContext(data: nil, width: rep.pixelsWide, height: rep.pixelsHigh,
                                   bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         ctx.scaleBy(x: scale, y: scale)
 
         // Layer 1: PDF pages at their on-screen positions.
@@ -403,11 +421,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
             ctx.restoreGState()
         }
 
-        if let image = ctx.makeImage(),
-           let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
-            try? data.write(to: url)
-            NSLog("PDFInk: snapshot written to %@", url.path)
-        }
+        return ctx.makeImage()
     }
 
     private func presentError(message: String, info: String) {

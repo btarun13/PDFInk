@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     var mainWindowController: MainWindowController?
+    var demoDirector: DemoDirector?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenuBar()
@@ -42,6 +43,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DevHarness.runDraftTest(controller: controller)
         }
 
+        // Demo recorder: `PDFInk demo.pdf --demo out.mp4` writes a product
+        // demo video (H.264) composed entirely in-app.
+        if let flagIndex = CommandLine.arguments.firstIndex(of: "--demo"),
+           CommandLine.arguments.count > flagIndex + 1 {
+            let director = DemoDirector(controller: controller,
+                                        outURL: URL(fileURLWithPath: CommandLine.arguments[flagIndex + 1]))
+            demoDirector = director
+            director.start()
+        }
+
         // Dev/testing hook: whiteboard create + add page + save.
         if let flagIndex = CommandLine.arguments.firstIndex(of: "--whiteboard-test"),
            CommandLine.arguments.count > flagIndex + 1 {
@@ -62,6 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Scripted demo runs are throwaway — don't leave a draft behind.
+        guard demoDirector == nil else { return }
         mainWindowController?.persistDraftIfNeeded()
     }
 
