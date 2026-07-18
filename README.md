@@ -67,15 +67,3 @@ A stroke is an array of `(point, pressure)` samples plus tool metadata. All
 page↔view mapping goes through PDFView's `convert` APIs; the canvas derives
 exact affine transforms from three reference points (covers scale, translation,
 and flips), unit-tested in `Tests/PDFInkCoreTests`.
-
-## Dev/test hooks
-
-Headless-friendly verification harness (no screen-recording permission needed):
-
-```sh
-PDFInk file.pdf --snapshot out.png        # window snapshot (pages composed manually)
-PDFInk file.pdf --draw-test prefix        # synthesized strokes, zoom, erase, undo + snapshots
-PDFInk file.pdf --pressure-test prefix    # simulated tablet events (pressure/tilt/proximity)
-PDFInk file.pdf --persist-test prefix     # draw, save in place, export flattened
-PDFInk file.pdf --draft-test              # draw, quit unsaved (autosave draft restore)
-```
