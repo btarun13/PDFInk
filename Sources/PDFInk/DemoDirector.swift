@@ -79,84 +79,77 @@ final class DemoDirector {
         addCard(duration: 2.0, title: "PDFInk", subtitle: "Handwritten PDF markup for Mac, built for Wacom pens")
         addWait(0.8)
 
-        // 1. Highlight the first bullet (yellow highlighter).
+        // 1. Highlight the recurring question (yellow highlighter).
         addStep(Step(duration: 0.01, onBegin: {
             c.toolState.tool = .highlighter
             c.toolState.color = ToolState.presetColors[4].color
         }))
-        addAnimatedStroke(duration: 1.1, points: Self.line(from: CGPoint(x: 90, y: 624),
-                                                           to: CGPoint(x: 512, y: 624), samples: 30),
+        addAnimatedStroke(duration: 1.1, points: Self.line(from: CGPoint(x: 104, y: 488),
+                                                           to: CGPoint(x: 468, y: 488), samples: 30),
                           pressures: Array(repeating: 0.6, count: 30))
         addWait(0.6)
 
-        // 2. Circle the $5.6M figure (red pen) and arrow to it.
+        // 2. Circle Multivac's answer (red pen).
         addStep(Step(duration: 0.01, onBegin: {
             c.toolState.tool = .pen
             c.toolState.color = ToolState.presetColors[2].color
             c.toolState.baseWidth = 2
         }))
-        addAnimatedStroke(duration: 1.2, points: Self.ellipse(center: CGPoint(x: 400, y: 497),
-                                                              rx: 56, ry: 24, samples: 44),
-                          pressures: Self.rampUpDown(44))
-        addWait(0.4)
-        addAnimatedStroke(duration: 0.6, points: Self.line(from: CGPoint(x: 250, y: 585),
-                                                           to: CGPoint(x: 348, y: 522), samples: 18),
-                          pressures: Self.rampUp(18))
-        addAnimatedStroke(duration: 0.35, points: Self.polyline([
-            CGPoint(x: 322, y: 524), CGPoint(x: 348, y: 522), CGPoint(x: 340, y: 546),
-        ], samplesPerSegment: 8), pressures: Array(repeating: 0.8, count: 16))
+        addAnimatedStroke(duration: 1.3, points: Self.ellipse(center: CGPoint(x: 264, y: 437),
+                                                              rx: 182, ry: 15, samples: 52),
+                          pressures: Self.rampUpDown(52))
         addWait(0.7)
 
-        // 3. Scroll down to the sign-off line.
-        addScroll(duration: 1.4, fromPageY: WhiteboardTemplate.pageSize.height, toPageY: 300)
+        // 3. Scroll down to the margin-notes line.
+        addScroll(duration: 1.3, fromPageY: WhiteboardTemplate.pageSize.height, toPageY: 300)
         addWait(0.4)
 
-        // 4. Sign on the sign-off line with pressure (blue pen).
+        // 4. Scribble a margin note with pressure (blue pen).
         addStep(Step(duration: 0.01, onBegin: {
             c.toolState.tool = .pen
             c.toolState.color = ToolState.presetColors[1].color
         }))
-        addAnimatedStroke(duration: 1.5, points: Self.signature(origin: CGPoint(x: 160, y: 122)),
+        addAnimatedStroke(duration: 1.4, points: Self.signature(origin: CGPoint(x: 165, y: 152)),
                           pressures: Self.wave(count: 60))
-        addWait(0.7)
+        addWait(0.6)
 
-        // 5. Zoom in on the signature and back — strokes stay registered.
+        // 5. Zoom in on the note and back — strokes stay registered.
         addZoom(duration: 1.2, from: nil, to: 2.6)
-        addWait(0.9)
+        addWait(0.8)
         addZoom(duration: 1.0, from: 2.6, to: nil)
-        addWait(0.5)
+        addWait(0.4)
 
-        // 6. Erase the signature (stroke-level), then undo brings it back.
+        // 6. Erase the note (stroke-level), then undo brings it back.
         addStep(Step(duration: 0.01, onBegin: { c.toolState.tool = .eraser }))
-        addEraseTap(at: CGPoint(x: 235, y: 128), duration: 0.5)
-        addWait(0.8)
+        addEraseTap(at: CGPoint(x: 240, y: 158), duration: 0.5)
+        addWait(0.7)
         addStep(Step(duration: 0.01, onBegin: { c.window?.undoManager?.undo() }))
-        addWait(0.9)
-
-        // 7. Whiteboard: grid notebook, sketch, add a page.
-        addStep(Step(duration: 0.01, onBegin: {
-            c.newWhiteboard(template: .grid)
-            c.toolState.tool = .pen
-            c.toolState.color = ToolState.presetColors[3].color
-        }))
         addWait(0.8)
-        // Axes
-        addAnimatedStroke(duration: 0.6, points: Self.polyline([
-            CGPoint(x: 420, y: 560), CGPoint(x: 420, y: 260), CGPoint(x: 900, y: 260),
-        ], samplesPerSegment: 14), pressures: Array(repeating: 0.7, count: 28),
-                          pageSpace: false)
-        // Growth curve
+
+        // 7. Whiteboard finale: handwrite the story's famous last line.
+        addStep(Step(duration: 0.01, onBegin: {
+            c.newWhiteboard(template: .blank)
+            c.toolState.tool = .pen
+            c.toolState.color = ToolState.presetColors[0].color // black ink
+            c.toolState.baseWidth = 4
+        }))
+        addWait(0.7)
+        addHandwriting("And AC said,", baselineY: 470, scale: 4.2, secondsPerStroke: 0.13)
+        addWait(0.3)
+        addHandwriting("\"LET THERE BE LIGHT!\"", baselineY: 340, scale: 4.2, secondsPerStroke: 0.11)
+        addWait(0.5)
+        // Underline flourish in red.
         addStep(Step(duration: 0.01, onBegin: {
             c.toolState.color = ToolState.presetColors[2].color
+            c.toolState.baseWidth = 2
         }))
-        addAnimatedStroke(duration: 1.1, points: Self.curve(from: CGPoint(x: 440, y: 300),
-                                                            to: CGPoint(x: 860, y: 520), samples: 40),
-                          pressures: Self.rampUp(40), pageSpace: false)
-        addWait(0.6)
-        addStep(Step(duration: 0.01, onBegin: { c.addPageAction(nil) }))
-        addWait(1.2)
+        addAnimatedStroke(duration: 0.8, points: (0..<30).map { i in
+            let t = CGFloat(i) / 29.0
+            return CGPoint(x: 300 + t * 680, y: 296 + sin(t * .pi * 2) * 7)
+        }, pressures: Self.rampUpDown(30), pageSpace: false)
+        addWait(1.4)
 
-        addCard(duration: 2.6, title: "PDFInk",
+        addCard(duration: 2.8, title: "PDFInk",
                 subtitle: "Pressure ink · highlighter · eraser-flip · whiteboards\ngithub.com/btarun13/PDFInk")
 
         addStep(Step(duration: 0.01, onBegin: { [weak self] in self?.finish() }))
@@ -223,6 +216,42 @@ final class DemoDirector {
                               self.deliver(.leftMouseUp, at: p, pressure: 0.5)
                           },
                           onEnd: { [weak self] in self?.penPoint = nil }))
+    }
+
+    /// Handwrites `text` on the whiteboard, stroke by stroke, centered
+    /// horizontally in the canvas area (window coordinates).
+    private func addHandwriting(_ text: String, baselineY: CGFloat, scale: CGFloat,
+                                secondsPerStroke: Double) {
+        let sidebarWidth: CGFloat = 158
+        let canvasWidth: CGFloat = 1280 - sidebarWidth
+        let textWidth = HandwritingFont.width(of: text, scale: scale)
+        let originX = sidebarWidth + (canvasWidth - textWidth) / 2
+        let strokes = HandwritingFont.strokes(for: text,
+                                              origin: CGPoint(x: originX, y: baselineY),
+                                              scale: scale)
+        for stroke in strokes {
+            let dense = Self.resample(stroke, maxSpacing: 5)
+            addAnimatedStroke(duration: max(secondsPerStroke, Double(dense.count) / 60.0),
+                              points: dense,
+                              pressures: Self.wave(count: dense.count),
+                              pageSpace: false)
+        }
+    }
+
+    /// Densifies a polyline so live drawing animates smoothly.
+    static func resample(_ points: [CGPoint], maxSpacing: CGFloat) -> [CGPoint] {
+        guard points.count > 1 else { return points }
+        var out: [CGPoint] = [points[0]]
+        for i in 1..<points.count {
+            let a = points[i - 1], b = points[i]
+            let dist = hypot(b.x - a.x, b.y - a.y)
+            let segments = max(1, Int(dist / maxSpacing))
+            for s in 1...segments {
+                let t = CGFloat(s) / CGFloat(segments)
+                out.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
+            }
+        }
+        return out
     }
 
     /// Smoothly scrolls so that page-y `toPageY` sits at the top of the view.
