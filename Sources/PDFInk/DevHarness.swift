@@ -155,6 +155,41 @@ enum DevHarness {
         }
     }
 
+    // MARK: - Whiteboard (--whiteboard-test)
+
+    /// Creates a grid whiteboard, draws, adds a page, draws on page 2,
+    /// snapshots, and reports the file path for reload verification.
+    static func runWhiteboardTest(controller: MainWindowController, prefix: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            controller.newWhiteboard(template: .grid)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            controller.toolState.tool = .pen
+            controller.toolState.color = ToolState.presetColors[1].color
+            simulateStroke(controller: controller,
+                           fromWindow: CGPoint(x: 350, y: 600),
+                           toWindow: CGPoint(x: 750, y: 420), wiggle: 50)
+            controller.addPageAction(nil)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            // The view scrolled to page 2 — draw there.
+            controller.toolState.color = ToolState.presetColors[3].color // green
+            simulateStroke(controller: controller,
+                           fromWindow: CGPoint(x: 350, y: 500),
+                           toWindow: CGPoint(x: 750, y: 500), wiggle: 30)
+            controller.saveDocumentAction(nil)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) {
+            snapshot(controller, prefix, "board")
+            let counts = controller.store.strokesByPage.mapValues(\.count)
+            NSLog("PDFInk[devtest]: whiteboard pages=%d strokesPerPage=%@ file=%@",
+                  controller.pdfView.document?.pageCount ?? -1,
+                  "\(counts)",
+                  controller.fileURL?.path ?? "nil")
+            NSApp.terminate(nil)
+        }
+    }
+
     /// Builds a tabletProximity CGEvent and posts it through NSApp's event
     /// queue so local NSEvent monitors observe it, as with real hardware.
     private static func postProximityEvent(isEraser: Bool, entering: Bool) {

@@ -42,6 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DevHarness.runDraftTest(controller: controller)
         }
 
+        // Dev/testing hook: whiteboard create + add page + save.
+        if let flagIndex = CommandLine.arguments.firstIndex(of: "--whiteboard-test"),
+           CommandLine.arguments.count > flagIndex + 1 {
+            DevHarness.runWhiteboardTest(controller: controller, prefix: CommandLine.arguments[flagIndex + 1])
+        }
+
         // Dev/testing hook: `PDFInk file.pdf --snapshot out.png` renders the
         // window into a PNG (no screen-recording permission needed) and quits.
         if let flagIndex = CommandLine.arguments.firstIndex(of: "--snapshot"),
@@ -92,6 +98,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
+
+        let newWhiteboardItem = NSMenuItem(title: "New Whiteboard", action: nil, keyEquivalent: "")
+        let newWhiteboardMenu = NSMenu(title: "New Whiteboard")
+        newWhiteboardMenu.addItem(withTitle: "Blank",
+                                  action: #selector(MainWindowController.newBlankWhiteboardAction(_:)),
+                                  keyEquivalent: "n")
+        newWhiteboardMenu.addItem(withTitle: "Grid",
+                                  action: #selector(MainWindowController.newGridWhiteboardAction(_:)),
+                                  keyEquivalent: "")
+        newWhiteboardMenu.addItem(withTitle: "Lined",
+                                  action: #selector(MainWindowController.newLinedWhiteboardAction(_:)),
+                                  keyEquivalent: "")
+        newWhiteboardItem.submenu = newWhiteboardMenu
+        fileMenu.addItem(newWhiteboardItem)
+
+        let addPageItem = fileMenu.addItem(withTitle: "Add Page",
+                                           action: #selector(MainWindowController.addPageAction(_:)),
+                                           keyEquivalent: "n")
+        addPageItem.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Open…", action: #selector(MainWindowController.openDocumentAction(_:)), keyEquivalent: "o")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Save", action: #selector(MainWindowController.saveDocumentAction(_:)), keyEquivalent: "s")

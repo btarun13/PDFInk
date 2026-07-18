@@ -22,6 +22,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     private var colorPopUp: NSPopUpButton?
 
     private(set) var fileURL: URL?
+    /// Template used when this document was created as a whiteboard; Add Page
+    /// appends a matching page (blank for opened PDFs).
+    private(set) var whiteboardTemplate: WhiteboardTemplate?
 
     init() {
         let window = NSWindow(
@@ -230,6 +233,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         }
         autosave.saveNow() // preserve unsaved ink of the previous document
         fileURL = url
+        whiteboardTemplate = nil // newWhiteboard(template:) restores it after
 
         // Reload editable strokes: an autosaved draft wins (it's newest);
         // otherwise recover strokes from PDFInk annotations saved in the file.
@@ -273,6 +277,66 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
     func windowWillClose(_ notification: Notification) {
         persistDraftIfNeeded()
     }
+
+    // MARK: - Whiteboards (notebook-style)
+
+    static func whiteboardsDirectory() throws -> URL {
+        let docs = try FileManager.default.url(for: .documentDirectory,
+                                               in: .userDomainMask,
+                                               appropriateFor: nil, create: true)
+        let dir = docs.appendingPathComponent("PDFInk Whiteboards", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Creates a new whiteboard as a real PDF file (so save/autosave work
+    /// immediately, notebook-style) and opens it.
+    func newWhiteboard(template: WhiteboardTemplate) {
+        do {
+            let dir = try Self.whiteboardsDirectory()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH.mm"
+            let stamp = formatter.string(from: Date())
+            var url = dir.appendingPathComponent("Whiteboard \(stamp).pdf")
+            var counter = 2
+            while FileManager.default.fileExists(atPath: url.path) {
+                url = dir.appendingPathComponent("Whiteboard \(stamp) (\(counter)).pdf")
+                counter += 1
+            }
+            try template.pdfData(pageCount: 1).write(to: url)
+            openPDF(at: url) // clears whiteboardTemplate, so set it after
+            whiteboardTemplate = template
+            NSLog("PDFInk: created %@ whiteboard at %@", template.rawValue, url.path)
+        } catch {
+            presentError(message: "Couldn't create whiteboard", info: error.localizedDescription)
+        }
+    }
+
+    /// Appends a page matching the whiteboard's template (blank for PDFs).
+    @objc func addPageAction(_ sender: Any?) {
+        guard let document = pdfView.document else { return }
+        let template = whiteboardTemplate ?? .blank
+        guard let page = template.makePage() else { return }
+        document.insert(page, at: document.pageCount)
+        pdfView.layoutDocumentView()
+        window?.isDocumentEdited = true
+        // Scroll to the new page so it's ready to draw on.
+        if let newPage = document.page(at: document.pageCount - 1) {
+            let top = CGPoint(x: 0, y: newPage.bounds(for: pdfView.displayBox).maxY)
+            pdfView.go(to: PDFDestination(page: newPage, at: top))
+        }
+        NSLog("PDFInk: added %@ page, document now has %d pages",
+              template.rawValue, document.pageCount)
+        // Whiteboards persist structure immediately, notebook-style; for
+        // opened PDFs the user decides when to write with Cmd+S.
+        if whiteboardTemplate != nil {
+            saveDocumentAction(nil)
+        }
+    }
+
+    @objc func newBlankWhiteboardAction(_ sender: Any?) { newWhiteboard(template: .blank) }
+    @objc func newGridWhiteboardAction(_ sender: Any?) { newWhiteboard(template: .grid) }
+    @objc func newLinedWhiteboardAction(_ sender: Any?) { newWhiteboard(template: .lined) }
 
     /// Unsaved ink survives via the draft; explicit save clears it.
     func persistDraftIfNeeded() {
@@ -434,6 +498,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuIt
         let docSelectors: Set<Selector> = [
             #selector(saveDocumentAction(_:)), #selector(exportFlattenedAction(_:)),
             #selector(zoomInAction(_:)), #selector(zoomOutAction(_:)), #selector(actualSizeAction(_:)),
+            #selector(addPageAction(_:)),
         ]
         if let sel = aSelector, docSelectors.contains(sel), pdfView.document == nil {
             return false
