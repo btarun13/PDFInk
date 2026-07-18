@@ -1,0 +1,6 @@
+.build/
+build/
+dist/
+.clt-fix/
+.swiftpm-libs-fix/
+.DS_Store
