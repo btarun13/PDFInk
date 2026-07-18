@@ -45,6 +45,10 @@ reinstall).
 - Autosave drafts every 30 s (and at quit) to
   `~/Library/Application Support/PDFInk/Drafts/`; unsaved ink is restored on
   next open.
+- **Whiteboards** (notebook mode): File ▸ New Whiteboard — Blank (⌘N), Grid,
+  or Lined paper. Created as real PDFs in `~/Documents/PDFInk Whiteboards/`
+  and auto-saved notebook-style. Add Page (⌘⇧N) appends a matching page
+  (works on opened PDFs too, appending a blank page).
 
 ## Architecture
 
